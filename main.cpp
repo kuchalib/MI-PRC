@@ -62,7 +62,7 @@ char * bruteForceStepRec(int step, int stringLength, char * alphabet, int alphab
 
 // nerekurzivni volani - idealni pro GPU?
 // initialPermutation nastavi pocatecni kombinaci pismen, count urcuje pocet iteraci
-char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char * text, uint8_t hash[16], int * initialPermutation, double count)
+char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char * text, uint8_t hash[16], int * initialPermutation, uint64_t count)
 {
 	for (int i = 0; i < stringLength; i++)
 	{
@@ -126,6 +126,37 @@ char * bruteForce(int minLength, int maxLength, char * alphabet, int alphabetSiz
 	return NULL; 
 }
 
+char * dictionaryAttack(char * dictionaryFile, uint8_t hash[16])
+{
+	FILE * fp = fopen(dictionaryFile, "r");
+
+	if (fp == NULL)
+	{
+		printf("Cant open the dictionary");
+		return NULL; 
+	}
+	char * word = (char*)malloc(255);
+	while (true)
+	{
+		if (fscanf(fp, "%s", word) == EOF)
+			break; 
+		int len = strlen(word);
+		md5(word, len, hashPlaceholder);
+		if (isHashEqual(hashPlaceholder, hash))
+		{
+			printf("%s\n", word);
+			//free(hashedString);
+			fclose(fp);
+			return word;
+		}
+	}
+
+	free(word);
+	fclose(fp);
+	return NULL; 
+
+}
+
 uint8_t * stringToHash(char * hashString)
 {
 	uint8_t * hashArray = (uint8_t *)malloc(16 * sizeof(uint8_t));
@@ -140,15 +171,14 @@ uint8_t * stringToHash(char * hashString)
 	return hashArray;
 }
 
-
-
 int main()
 {
 	char str[40];
 	scanf("%s", &str);
 	char alpha[2] = { '0', '1' };
 	uint8_t * hash = stringToHash(str);
-	bruteForce(2, 2, alphabet, 62, hash);
+	dictionaryAttack("E:\\Documents\\Visual Studio 2017\\Projects\\HashSekv\\HashSekv\\realhuman_phill.txt", hash);
+	//bruteForce(4, 4, alphabet, 62, hash);
 	//bruteForce(1, 5, alpha, 2, hash);
 	return 0; 
 }
