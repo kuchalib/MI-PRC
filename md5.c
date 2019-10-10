@@ -1,3 +1,5 @@
+// Prevzato a upraveno z https://gist.github.com/creationix/4710780
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,7 +12,7 @@ uint32_t h0, h1, h2, h3;
  
 
  
-uint8_t * md5(char *initial_msg, size_t initial_len, uint8_t* hash) {
+void md5(char *initial_msg, size_t initial_len, uint8_t* hash) {
  
     // Message (to prepare)
     uint8_t *msg = NULL;
@@ -152,7 +154,6 @@ uint8_t * md5(char *initial_msg, size_t initial_len, uint8_t* hash) {
  
     // cleanup
     free(msg);
-	return hash; 
  
 }
 /* 

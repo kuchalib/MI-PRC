@@ -35,10 +35,10 @@ char * bruteForceStepRec(int step, int stringLength, char * alphabet, int alphab
 	if (step == stringLength)
 	{
 		text[step] = 0;
-		uint8_t * hashedString  = md5(text, stringLength, hashPlaceholder);
+		md5(text, stringLength, hashPlaceholder);
 
 		// check hash
-		if (isHashEqual(hashedString, hash))
+		if (isHashEqual(hashPlaceholder, hash))
 		{
 			printf("%s\n", text);
 			//free(hashedString);
@@ -75,8 +75,8 @@ char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char 
 	
 	while (!overflow)
 	{
-		uint8_t * hashedString = md5(text, stringLength, hashPlaceholder);
-		if (isHashEqual(hashedString, hash))
+		md5(text, stringLength, hashPlaceholder);
+		if (isHashEqual(hashPlaceholder, hash))
 		{
 			printf("%s\n", text);
 			//free(hashedString);
@@ -148,7 +148,7 @@ int main()
 	scanf("%s", &str);
 	char alpha[2] = { '0', '1' };
 	uint8_t * hash = stringToHash(str);
-	bruteForce(5, 5, alphabet, 62, hash);
+	bruteForce(2, 2, alphabet, 62, hash);
 	//bruteForce(1, 5, alpha, 2, hash);
 	return 0; 
 }
