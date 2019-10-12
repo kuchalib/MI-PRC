@@ -1,5 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
-
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -15,9 +16,9 @@ char alphabet[94] =		  { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 
 							'{', '|', '}', '~' }; 
 
 char * lowercase = &alphabet[0];
-char * uppercase = &alphabet[25];
-char * nums = &alphabet[51];
-char * specials = &alphabet[61];
+char * uppercase = &alphabet[26];
+char * nums = &alphabet[52];
+char * specials = &alphabet[62];
 uint8_t hashPlaceholder[16]; 
 
 bool isHashEqual(uint8_t * hash1, uint8_t * hash2)
@@ -40,7 +41,6 @@ char * bruteForceStepRec(int step, int stringLength, char * alphabet, int alphab
 		// check hash
 		if (isHashEqual(hashPlaceholder, hash))
 		{
-			printf("%s\n", text);
 			//free(hashedString);
 			return text; 
 		}
@@ -61,7 +61,8 @@ char * bruteForceStepRec(int step, int stringLength, char * alphabet, int alphab
 
 
 // nerekurzivni volani - idealni pro GPU?
-// initialPermutation nastavi pocatecni kombinaci pismen, count urcuje pocet iteraci
+// initialPermutation nastavi pocatecni kombinaci pismen, toto se zjisti tak, ze se vezme pocatecni hodnota pro dane vlakno a postupne se vymoduli/vydeli toto cislo a ziska se tim permutace. 
+//Bude to fungovat podobne jako když se napr. desitkove cislo prevadi na sestnactkove, count urcuje pocet iteraci
 char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char * text, uint8_t hash[16], int * initialPermutation, uint64_t count)
 {
 	for (int i = 0; i < stringLength; i++)
@@ -78,7 +79,6 @@ char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char 
 		md5(text, stringLength, hashPlaceholder);
 		if (isHashEqual(hashPlaceholder, hash))
 		{
-			printf("%s\n", text);
 			//free(hashedString);
 			return text;
 		}
@@ -144,7 +144,6 @@ char * dictionaryAttack(char * dictionaryFile, uint8_t hash[16])
 		md5(word, len, hashPlaceholder);
 		if (isHashEqual(hashPlaceholder, hash))
 		{
-			printf("%s\n", word);
 			//free(hashedString);
 			fclose(fp);
 			return word;
@@ -171,14 +170,129 @@ uint8_t * stringToHash(char * hashString)
 	return hashArray;
 }
 
-int main()
+void badUsage()
 {
-	char str[40];
-	scanf("%s", &str);
-	char alpha[2] = { '0', '1' };
-	uint8_t * hash = stringToHash(str);
-	dictionaryAttack("E:\\Documents\\Visual Studio 2017\\Projects\\HashSekv\\HashSekv\\realhuman_phill.txt", hash);
+	printf("Usage: PATH_TO_PROGRAM MODE <path_to_dictionary> <alphabet> HASH <min_length> <max_length>\n");
+	printf("MODE:\n");
+	printf("0 - Dictionary attack (path_to_dictionary is mandatory)\n");
+	printf("1 - Brute Force attack (alphabet, min and max length are mandatory)\n");
+	printf("----- ALPHABET -----\n");
+	printf("----- 0 - only numbers\n");
+	printf("----- 1 - lower case \n");
+	printf("----- 2 - upper case\n");
+	printf("----- 3 - lower+upper case\n");
+	printf("----- 4 - lower+upper case + numbers\n");
+	printf("----- 5 - all characters \n");
+}
+
+int main(int argc, char *argv[])
+{
+	
+	//char str[40];
+	//scanf("%s", &str);
+	//char alpha[2] = { '0', '1' };
+	
+	
+	//uint8_t * hash = stringToHash(str);
+	//dictionaryAttack("E:\\Documents\\Visual Studio 2017\\Projects\\HashSekv\\HashSekv\\realhuman_phill.txt", hash);
 	//bruteForce(4, 4, alphabet, 62, hash);
 	//bruteForce(1, 5, alpha, 2, hash);
+	uint8_t * hash;
+	char * originalString; 
+	int mode = -1;
+	int alphabetMode = -1; 
+	char * _alphabet; 
+	int alphabetLen; 
+	if (argc < 2)
+	{
+		badUsage(); 
+		return -1; 
+	}
+	mode = atoi(argv[1]);
+	if (argc < 4)
+	{
+		badUsage();
+		return -1;
+	}
+	hash = stringToHash(argv[3]);
+	if (mode == 0)
+	{
+		originalString = dictionaryAttack(argv[2], hash);
+		if (originalString == NULL)
+		{
+			printf("No matches!\n"); 
+			return 0;
+		}
+		else
+		{
+			printf("%s\n", originalString); 
+			return 0; 
+		}
+	}
+	else if (mode == 1)
+	{
+		int minLenght = -1, maxLength = -1; 
+		if (argc < 4)
+		{
+			badUsage();
+			return -1;
+		}
+		alphabetMode = atoi(argv[2]);
+		minLenght = atoi(argv[4]);
+		maxLength = atoi(argv[5]);
+
+		minLenght = MIN(minLenght, maxLength);
+		maxLength = MAX(minLenght, maxLength); 
+
+		if (alphabetMode == 0)
+		{
+			_alphabet = nums;
+			alphabetLen = 10; 
+		}
+		else if (alphabetMode == 1)
+		{
+			_alphabet = lowercase;
+			alphabetLen = 26;
+		}
+		else if (alphabetMode == 2)
+		{
+			_alphabet = uppercase;
+			alphabetLen = 26;
+		}
+		else if (alphabetMode == 3)
+		{
+			_alphabet = alphabet;
+			alphabetLen = 52;
+		}
+		else if (alphabetMode == 4)
+		{
+			_alphabet = alphabet;
+			alphabetLen = 62;
+		}
+		else if (alphabetMode == 5)
+		{
+			_alphabet = alphabet;
+			alphabetLen = 94;
+		}
+		else
+		{
+			badUsage();
+			return -1;
+		}
+
+		originalString = bruteForce(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		if (originalString == NULL)
+		{
+			printf("No matches!\n");
+			return 0;
+		}
+		else
+		{
+			printf("%s\n", originalString);
+			return 0;
+		}
+
+	}
+
 	return 0; 
 }
