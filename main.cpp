@@ -7,7 +7,7 @@
 #include <ctype.h>
 #include <math.h>
 
-#include "md5.c";
+#include "md5.c"
 
 char alphabet[94] =		  { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z' , // 25
 							'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', // 51
@@ -62,7 +62,7 @@ char * bruteForceStepRec(int step, int stringLength, char * alphabet, int alphab
 
 // nerekurzivni volani - idealni pro GPU?
 // initialPermutation nastavi pocatecni kombinaci pismen, toto se zjisti tak, ze se vezme pocatecni hodnota pro dane vlakno a postupne se vymoduli/vydeli toto cislo a ziska se tim permutace. 
-//Bude to fungovat podobne jako když se napr. desitkove cislo prevadi na sestnactkove, count urcuje pocet iteraci
+//Bude to fungovat podobne jako kdyï¿½ se napr. desitkove cislo prevadi na sestnactkove, count urcuje pocet iteraci
 char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char * text, uint8_t hash[16], int * initialPermutation, uint64_t count)
 {
 	for (int i = 0; i < stringLength; i++)
@@ -172,17 +172,19 @@ uint8_t * stringToHash(char * hashString)
 
 void badUsage()
 {
-	printf("Usage: PATH_TO_PROGRAM MODE <path_to_dictionary> <alphabet> HASH <min_length> <max_length>\n");
+	printf("Usage: PATH_TO_PROGRAM mode [path_to_dictionary | alphabet] hash [min_length] [max_length]\n\n");
 	printf("MODE:\n");
-	printf("0 - Dictionary attack (path_to_dictionary is mandatory)\n");
-	printf("1 - Brute Force attack (alphabet, min and max length are mandatory)\n");
-	printf("----- ALPHABET -----\n");
-	printf("----- 0 - only numbers\n");
-	printf("----- 1 - lower case \n");
-	printf("----- 2 - upper case\n");
-	printf("----- 3 - lower+upper case\n");
-	printf("----- 4 - lower+upper case + numbers\n");
-	printf("----- 5 - all characters \n");
+	printf("0 - Dictionary attack\n");
+	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash\n"); 
+	printf("1 - Brute-force attack\n");
+	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length\n\n"); 
+	printf("ALPHABET:\n");
+	printf("0 - numbers only\n");
+	printf("1 - lower case\n");
+	printf("2 - upper case\n");
+	printf("3 - lower+upper case\n");
+	printf("4 - lower+upper case + numbers\n");
+	printf("5 - all characters\n");
 }
 
 int main(int argc, char *argv[])
@@ -191,8 +193,6 @@ int main(int argc, char *argv[])
 	//char str[40];
 	//scanf("%s", &str);
 	//char alpha[2] = { '0', '1' };
-	
-	
 	//uint8_t * hash = stringToHash(str);
 	//dictionaryAttack("E:\\Documents\\Visual Studio 2017\\Projects\\HashSekv\\HashSekv\\realhuman_phill.txt", hash);
 	//bruteForce(4, 4, alphabet, 62, hash);
@@ -203,17 +203,12 @@ int main(int argc, char *argv[])
 	int alphabetMode = -1; 
 	char * _alphabet; 
 	int alphabetLen; 
-	if (argc < 2)
+	if (argc < 4)
 	{
 		badUsage(); 
 		return -1; 
 	}
 	mode = atoi(argv[1]);
-	if (argc < 4)
-	{
-		badUsage();
-		return -1;
-	}
 	hash = stringToHash(argv[3]);
 	if (mode == 0)
 	{
@@ -231,12 +226,12 @@ int main(int argc, char *argv[])
 	}
 	else if (mode == 1)
 	{
-		int minLenght = -1, maxLength = -1; 
-		if (argc < 4)
+		if (argc < 6)
 		{
 			badUsage();
 			return -1;
 		}
+		int minLenght = -1, maxLength = -1; 
 		alphabetMode = atoi(argv[2]);
 		minLenght = atoi(argv[4]);
 		maxLength = atoi(argv[5]);
