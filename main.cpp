@@ -236,8 +236,10 @@ int main(int argc, char *argv[])
 		minLenght = atoi(argv[4]);
 		maxLength = atoi(argv[5]);
 
-		minLenght = MIN(minLenght, maxLength);
-		maxLength = MAX(minLenght, maxLength); 
+		if (minLenght > maxLength) {
+			printf("Minimum length must be less than or equal to the maximum length.\n");
+			return -1;
+		}
 
 		if (alphabetMode == 0)
 		{
