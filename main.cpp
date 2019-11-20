@@ -16,7 +16,7 @@ char allchars[95] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ0123456
 char * alph[6] = {&tnumbers[0], &tlowercase[0], &tuppercase[0], &tlowerupper[0], &tloweruppernums[0]};
 char sizes[6] = {10, 26, 26, 52, 62, 94};
 
-uint8_t hashPlaceholder[16]; 
+
 
 bool isHashEqual(uint8_t * hash1, uint8_t * hash2)
 {
@@ -33,6 +33,7 @@ bool isHashEqual(uint8_t * hash1, uint8_t * hash2)
 //Bude to fungovat podobne jako kdyz se napr. desitkove cislo prevadi na sestnactkove, count urcuje pocet iteraci
 char * bruteForceStep(int stringLength, char * alphabet, int alphabetSize, char * text, uint8_t hash[16], int * initialPermutation, uint64_t count)
 {
+	uint8_t hashPlaceholder[16];
 	for (int i = 0; i < stringLength; i++)
 	{
 		// nastaveni stringu do pocatecniho stavu
@@ -96,6 +97,7 @@ char * bruteForce(int minLength, int maxLength, char * alphabet, int alphabetSiz
 
 char * dictionaryAttack(char * dictionaryFile, uint8_t hash[16])
 {
+	uint8_t hashPlaceholder[16];
 	FILE * fp = fopen(dictionaryFile, "r");
 
 	if (fp == NULL)
