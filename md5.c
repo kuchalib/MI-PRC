@@ -8,7 +8,6 @@
 // leftrotate function definition
 #define LEFTROTATE(x, c) (((x) << (c)) | ((x) >> (32 - (c))))
 // These vars will contain the hash
-uint32_t h0, h1, h2, h3;
  
 
  
@@ -16,6 +15,7 @@ void md5(char *initial_msg, size_t initial_len, uint8_t* hash) {
  
     // Message (to prepare)
     uint8_t *msg = NULL;
+	uint32_t h0, h1, h2, h3; 
 	//uint8_t *hash = (uint8_t*)malloc(16 * sizeof(uint8_t));
  
     // Note: All variables are unsigned 32 bit and wrap modulo 2^32 when calculating
