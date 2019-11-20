@@ -1,4 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
+#define THREADS 128
+#define BLOCKS 200
+
+#define THRESHOLD 1000
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -20,9 +24,12 @@ char tloweruppernums[63] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ
 char allchars[95] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 char * alph[6] = { &tnumbers[0], &tlowercase[0], &tuppercase[0], &tlowerupper[0], &tloweruppernums[0] };
 char sizes[6] = { 10, 26, 26, 52, 62, 94 };
+int limits[6] = { 19, 13, 13, 11, 10, 9 }; // max word length
 
-// uint4
+char * valuePlaceholder;
 
+__constant__ char alphabetGPU[95]; 
+__constant__ uint32_t hashGPU[4]; 
 
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
@@ -32,7 +39,186 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     int i = threadIdx.x;
     c[i] = a[i] + b[i];
 }
+#pragma region GPU
+__device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * ret)
+{
+	*ret = true;
+	for (int i = 0; i < 4; i++)
+	{
+		if (hash1[i] != hash2[i])
+		{
+			*ret = false;
+			return;
+		}
+	}
+}
 
+__device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char * text, int * initialPermutation, uint64_t count, char * valuePlaceholder)
+{
+	// pouzit uint32_t
+
+	uint32_t hashPlaceHolderNew[4];
+	uint32_t hashLocal[4]; 
+	memcpy(hashLocal, hashGPU, 4 * sizeof(uint32_t));
+	for (int i = 0; i < stringLength; i++)
+	{
+		// nastaveni stringu do pocatecniho stavu
+		text[i] = alphabetGPU[initialPermutation[i]];
+	}
+	text[stringLength] = 0;
+	bool overflow = false;
+	uint64_t localCount = 0;
+	bool retTmp = false;
+	uint8_t msg[200]; 
+	while (!overflow)
+	{
+		
+		md5Device(text, stringLength, hashPlaceHolderNew, msg);
+		isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
+		if (retTmp)
+		{
+			memcpy(valuePlaceholder, text, stringLength * sizeof(char)); 
+			
+			//free(hashedString);
+			return; 
+		}
+		initialPermutation[0]++;
+		initialPermutation[0] %= alphabetSize;
+		text[0] = alphabetGPU[initialPermutation[0]];
+		if (initialPermutation[0] == 0)
+		{
+			for (int i = 1; i <= stringLength; i++)
+			{
+				// carry chain
+				initialPermutation[i]++;
+				initialPermutation[i] %= alphabetSize;
+				text[i] = alphabetGPU[initialPermutation[i]];
+				if (initialPermutation[i] != 0)
+					break;
+				else
+					if (i == stringLength)
+						overflow = true;
+			}
+		}
+
+		localCount++;
+		if (localCount >= count)
+			break;
+		if (localCount % THRESHOLD == 0)
+		{
+			if (valuePlaceholder[0] != 0)
+				return; 
+		}
+	}
+	// hash nenalezen
+	return NULL;
+}
+
+__global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char * valuePlaceholder)
+{
+	cudaError_t cudaStatus;
+	char * text;
+	int * initialPermutation; 
+	int threadCount = blockDim.x;
+	int blockCount = gridDim.x;
+	double tmp = ((double)total / blockCount);
+	uint64_t blockWork = (int)ceil(tmp);
+	tmp = (double)total / (blockCount*threadCount);
+	uint64_t threadWork = (int)ceil(tmp);
+	uint64_t start = blockIdx.x * blockWork + threadIdx.x * threadWork;
+	
+
+	text = (char*)malloc(len); 
+
+	if (text == 0)
+	{
+		printf("bruteForceDevice, nelze alokovat pamet pro text\n");
+		return;
+	}
+
+	//char * value = bruteForceStepRec(0, i, alphabet, alphabetSize, text, hash);
+
+
+	initialPermutation = (int*)malloc(len * sizeof(int));
+	if (initialPermutation == NULL) {
+		printf("bruteForceDevice, nelze alokovat pamet\n");
+		return;
+	}
+	
+
+	for (int i = 0; i < len; i++)
+	{
+
+		initialPermutation[i] = start % alphabetSize;
+		start /= alphabetSize; 
+	}
+
+	bruteForceStepDevice(len, alphabetSize, text, initialPermutation, threadWork, valuePlaceholder);
+
+	free(text);
+	free(initialPermutation);
+}
+
+__host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabet, int alphabetSize, uint32_t hash[4])
+{
+	cudaError_t cudaStatus;
+	cudaStatus = cudaMemcpyToSymbol((const void *)alphabetGPU, alphabet, alphabetSize, 0, cudaMemcpyHostToDevice);
+
+	char * originalValue = NULL;
+
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaBruteForceStart, nelze alokovat symbol alphabetGPU\n");
+		return originalValue;
+	}
+
+	cudaStatus = cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaBruteForceStart, nelze alokovat symbol hash\n");
+		return originalValue;
+	}
+
+	for (int i = minLength; i <= maxLength; i++)
+	{
+		originalValue = NULL; 
+		cudaStatus = cudaMalloc((void**)&valuePlaceholder, (size_t)(i * sizeof(char) + 1));
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaBruteForceStart, nelze alokovat pamet\n");
+			return originalValue;
+		}
+
+		//cudaStatus = cudaMemset(&valuePlaceholder, 0, (size_t)i + 1); 
+		//if (cudaStatus != cudaSuccess) {
+			//printf("cudaBruteForceStart, nelze nastavit pamet\n");
+			//return originalValue;
+		//}
+		uint64_t total = pow(alphabetSize, i);
+		bruteForceDevice << <BLOCKS, THREADS >> >(i, total, alphabetSize, valuePlaceholder);
+		originalValue = (char *)malloc(i * sizeof(char) + 1);
+		cudaDeviceSynchronize();
+
+		cudaStatus = cudaMemcpy(originalValue, valuePlaceholder, i, cudaMemcpyDeviceToHost);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaBruteForceStart, nelze zkopirovat pamet\n");
+			free(originalValue);
+			originalValue = NULL; 
+			return originalValue;
+		}
+		cudaFree(valuePlaceholder);
+
+		if (originalValue[0] != 0)
+			break;
+
+		free(originalValue);
+
+
+	}
+
+	return originalValue; 
+	
+}
+#pragma region GPU
+
+#pragma region CPU
 void isHashEqualNew(uint32_t * hash1, uint32_t * hash2, bool * ret)
 {
 	*ret = true; 
@@ -134,20 +320,6 @@ void badUsage()
 	printf("5 - all characters\n");
 }
 
-uint8_t * stringToHash(char * hashString)
-{
-	uint8_t * hashArray = (uint8_t *)malloc(16 * sizeof(uint8_t));
-	for (int i = 0; i < 16; i++)
-	{
-		uint8_t hiNibble = (uint8_t)tolower(hashString[2 * i]);
-		hiNibble > 57 ? hiNibble -= 87 : hiNibble -= 48;
-		uint8_t loNibble = (uint8_t)tolower(hashString[2 * i + 1]);
-		loNibble > 57 ? loNibble -= 87 : loNibble -= 48;
-		hashArray[i] = hiNibble << 4 | loNibble;
-	}
-	return hashArray;
-}
-
 uint32_t * stringToHashNew(char * hashString)
 {
 	uint8_t * hashArray = (uint8_t *)malloc(16 * sizeof(uint8_t));
@@ -168,6 +340,8 @@ uint32_t * stringToHashNew(char * hashString)
 	free(hashArray);
 	return hashNew;
 }
+
+#pragma endregion CPU
 
 int main(int argc, char *argv[])
 {
@@ -223,7 +397,8 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 
-		originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		originalString = cudaBruteForceStart(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		//originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
 		if (originalString == NULL) {
 			printf("No matches!\n");
 			return 0;
@@ -260,6 +435,8 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
+
 
 // Helper function for using CUDA to add vectors in parallel.
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
