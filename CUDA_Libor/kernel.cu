@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define THREADS 128
-#define BLOCKS 32
+#define THREADS 128 /// 128
+#define BLOCKS 32 /// 32
 
 #define THRESHOLD 1000
 
@@ -51,6 +51,7 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 	// pouzit uint32_t
 
 	uint32_t hashPlaceHolderNew[4];
+
 	uint32_t hashLocal[4]; 
 	memcpy(hashLocal, hashGPU, 4 * sizeof(uint32_t));
 	for (int i = 0; i < stringLength; i++)
@@ -58,6 +59,7 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 		// nastaveni stringu do pocatecniho stavu
 		text[i] = alphabetGPU[initialPermutation[i]];
 	}
+
 
 	text[stringLength] = 0;
 	bool overflow = false;
@@ -80,7 +82,7 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 		text[0] = alphabetGPU[initialPermutation[0]];
 		if (initialPermutation[0] == 0)
 		{
-			for (int i = 1; i <= stringLength; i++)
+			for (int i = 1; i < stringLength; i++)
 			{
 				// carry chain
 				initialPermutation[i]++;
@@ -121,7 +123,7 @@ __global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char
 	uint64_t start = blockIdx.x * blockWork + threadIdx.x * threadWork;
 	
 
-	text = (char*)malloc(len); 
+	text = (char*)malloc(len + 1); 
 
 	if (text == 0)
 	{
