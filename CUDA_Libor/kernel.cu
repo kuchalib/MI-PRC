@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define THREADS 128
-#define BLOCKS 200
+#define BLOCKS 32
 
 #define THRESHOLD 1000
 
@@ -22,7 +22,7 @@ char tuppercase[27] = "ABCDEFGHIJKLMNOPQRTSUVWXYZ";
 char tlowerupper[53] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ";
 char tloweruppernums[63] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ0123456789";
 char allchars[95] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRTSUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
-char * alph[6] = { &tnumbers[0], &tlowercase[0], &tuppercase[0], &tlowerupper[0], &tloweruppernums[0] };
+char * alph[6] = { &tnumbers[0], &tlowercase[0], &tuppercase[0], &tlowerupper[0], &tloweruppernums[0], allchars };
 char sizes[6] = { 10, 26, 26, 52, 62, 94 };
 int limits[6] = { 19, 13, 13, 11, 10, 9 }; // max word length
 
@@ -31,14 +31,7 @@ char * valuePlaceholder;
 __constant__ char alphabetGPU[95]; 
 __constant__ uint32_t hashGPU[4]; 
 
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-	//uint4 bb = 0x00112233445566778899aabbccddeeff; 
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
 #pragma region GPU
 __device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * ret)
 {
@@ -65,6 +58,7 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 		// nastaveni stringu do pocatecniho stavu
 		text[i] = alphabetGPU[initialPermutation[i]];
 	}
+
 	text[stringLength] = 0;
 	bool overflow = false;
 	uint64_t localCount = 0;
@@ -78,7 +72,6 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 		if (retTmp)
 		{
 			memcpy(valuePlaceholder, text, stringLength * sizeof(char)); 
-			
 			//free(hashedString);
 			return; 
 		}
@@ -186,11 +179,11 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 			return originalValue;
 		}
 
-		//cudaStatus = cudaMemset(&valuePlaceholder, 0, (size_t)i + 1); 
-		//if (cudaStatus != cudaSuccess) {
-			//printf("cudaBruteForceStart, nelze nastavit pamet\n");
-			//return originalValue;
-		//}
+		cudaStatus = cudaMemset(valuePlaceholder, 0, (size_t)i + 1); 
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaBruteForceStart, nelze nastavit pamet\n");
+			return originalValue;
+		}
 		uint64_t total = pow(alphabetSize, i);
 		bruteForceDevice << <BLOCKS, THREADS >> >(i, total, alphabetSize, valuePlaceholder);
 		originalValue = (char *)malloc(i * sizeof(char) + 1);
@@ -209,14 +202,11 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 			break;
 
 		free(originalValue);
-
-
 	}
 
 	return originalValue; 
-	
 }
-#pragma region GPU
+#pragma endregion GPU
 
 #pragma region CPU
 void isHashEqualNew(uint32_t * hash1, uint32_t * hash2, bool * ret)
@@ -388,7 +378,7 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 
-		if (alphabetMode >= 0 && alphabetMode < 5) {
+		if (alphabetMode >= 0 && alphabetMode <= 5) {
 			_alphabet = alph[alphabetMode];
 			alphabetLen = sizes[alphabetMode];
 		}
@@ -410,110 +400,6 @@ int main(int argc, char *argv[])
 	}
 
 	return 0;
-	const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
-
-    // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
-        return 1;
-    }
-
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
-
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-    cudaStatus = cudaDeviceReset();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
-        return 1;
-    }
-
-    return 0;
 }
 
 
-
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
-{
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
-
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
-
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, size>>>(dev_c, dev_a, dev_b);
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
-}
