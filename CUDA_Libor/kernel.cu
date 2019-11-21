@@ -205,7 +205,6 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 
 		free(originalValue);
 	}
-
 	return originalValue; 
 }
 #pragma endregion GPU
@@ -303,6 +302,8 @@ void badUsage()
 	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash\n");
 	printf("1 - Brute-force attack\n");
 	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length\n\n");
+	printf("2 - Brute-force attack GPU\n");
+	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length\n\n");
 	printf("ALPHABET:\n");
 	printf("0 - numbers only\n");
 	printf("1 - lower case\n");
@@ -392,6 +393,44 @@ int main(int argc, char *argv[])
 		originalString = cudaBruteForceStart(minLenght, maxLength, _alphabet, alphabetLen, hash);
 		//originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
 		if (originalString == NULL) {
+			printf("No matches!\n");
+			return 0;
+		}
+		else {
+			printf("%s\n", originalString);
+			return 0;
+		}
+		
+	}
+	else if (mode == 2)
+	{
+		if (argc < 6) {
+			badUsage();
+			return -1;
+		}
+
+		int minLenght = -1, maxLength = -1;
+		alphabetMode = atoi(argv[2]);
+		minLenght = atoi(argv[4]);
+		maxLength = atoi(argv[5]);
+
+		if (minLenght > maxLength) {
+			printf("Minimum length must be less than or equal to the maximum length.\n");
+			return -1;
+		}
+
+		if (alphabetMode >= 0 && alphabetMode <= 5) {
+			_alphabet = alph[alphabetMode];
+			alphabetLen = sizes[alphabetMode];
+		}
+		else {
+			badUsage();
+			return -1;
+		}
+
+		originalString = cudaBruteForceStart(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		//originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		if (originalString[0] == 0) {
 			printf("No matches!\n");
 			return 0;
 		}
