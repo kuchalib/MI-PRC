@@ -4,6 +4,10 @@
 
 #define THRESHOLD 1000
 
+#define MAX_RULES_COUNT 5
+
+#define ADD_BACK 1
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -226,7 +230,11 @@ void isHashEqualNew(uint32_t * hash1, uint32_t * hash2, bool * ret)
 // nerekurzivni volani - idealni pro GPU?
 // initialPermutation nastavi pocatecni kombinaci pismen, toto se zjisti tak, ze se vezme pocatecni hodnota pro dane vlakno a postupne se vymoduli/vydeli toto cislo a ziska se tim permutace. 
 //Bude to fungovat podobne jako kdyz se napr. desitkove cislo prevadi na sestnactkove, count urcuje pocet iteraci
-char * bruteForceStepNew(int stringLength, char * alphabet, int alphabetSize, char * text, uint32_t hash[4], int * initialPermutation, uint64_t count)
+// stringLength - delka editovaneho textu
+// totalStringLength - celkova delka textu
+// text - zacatek editace
+// textStartAddress - pocatecni adresa textu
+char * bruteForceStepNew(int stringLength, char * alphabet, int alphabetSize, char * text, uint32_t hash[4], int * initialPermutation, uint64_t count, char * textStartAddress, int totalStringLength)
 {
 	// pouzit uint32_t
 	uint32_t hashPlaceHolderNew[4]; 
@@ -242,7 +250,7 @@ char * bruteForceStepNew(int stringLength, char * alphabet, int alphabetSize, ch
 
 	while (!overflow)
 	{
-		md5(text, stringLength, hashPlaceHolderNew);
+		md5(textStartAddress, totalStringLength, hashPlaceHolderNew);
 		isHashEqualNew(hashPlaceHolderNew, hash, &retTmp);
 		if (retTmp)
 		{
@@ -254,7 +262,7 @@ char * bruteForceStepNew(int stringLength, char * alphabet, int alphabetSize, ch
 		text[0] = alphabet[initialPermutation[0]];
 		if (initialPermutation[0] == 0)
 		{
-			for (int i = 1; i <= stringLength; i++)
+			for (int i = 1; i < stringLength; i++)
 			{
 				// carry chain
 				initialPermutation[i]++;
@@ -284,12 +292,67 @@ char * bruteForceNew(int minLength, int maxLength, char * alphabet, int alphabet
 		//char * value = bruteForceStepRec(0, i, alphabet, alphabetSize, text, hash);
 		int * initialPermutation = (int*)calloc(sizeof(int), i);
 		uint64_t count = pow(alphabetSize, i);
-		char * value = bruteForceStepNew(i, alphabet, alphabetSize, text, hash, initialPermutation, count);
+		char * value = bruteForceStepNew(i, alphabet, alphabetSize, text, hash, initialPermutation, count, text, i);
 		if (value != NULL)
 			return value;
 		free(text);
 	}
 
+	return NULL;
+}
+
+// Rozsireny slovnikovy utok, aplikuje pouze pravidla pridavani pismen v rozsahu minLength - maxLength za slovo, v budoucnu lze upravovat pomoci rules
+char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabet, int * alphabetSize, int * minLength, int * maxLength, int * rules, int rulesCount)
+{
+	uint32_t hashPlaceholder[4];
+	FILE * fp = fopen(dictionaryFile, "r");
+	bool retTmp = false;
+
+	if (fp == NULL)
+	{
+		printf("Cant open the dictionary");
+		return NULL;
+	}
+	char * word = (char*)malloc(255);
+	while (true)
+	{
+		if (fscanf(fp, "%s", word) == EOF)
+			break;
+		int len = strlen(word);
+		md5(word, len, hashPlaceholder);
+		isHashEqualNew(hashPlaceholder, hash, &retTmp);
+		if (retTmp)
+		{
+			//free(hashedString);
+			fclose(fp);
+			return word;
+		}
+		
+		for (int i = 0; i < rulesCount; i++)
+		{
+			if (rules[i] == ADD_BACK)
+			{
+				for (int j = minLength[i]; j <= maxLength[i]; j++)
+				{
+					char * editStart = word + len;
+					int finalLength = len + j; 
+					editStart[j] = 0; // vynulovat konec stringu
+					int * initialPermutation = (int*)calloc(j, sizeof(int)); 
+					uint64_t count = pow(alphabetSize[i], j);
+					char * result = bruteForceStepNew(j, alphabet[i], alphabetSize[i], editStart, hash, initialPermutation, count, word, finalLength); 
+					if (result != NULL)
+					{
+						fclose(fp);
+						return word;
+					}
+
+				}
+			}
+		}
+	}
+
+	free(word);
+	fclose(fp);
 	return NULL;
 }
 
@@ -299,7 +362,7 @@ void badUsage()
 	printf("Usage: PATH_TO_PROGRAM mode [path_to_dictionary | alphabet] hash [min_length] [max_length]\n\n");
 	printf("MODE:\n");
 	printf("0 - Dictionary attack\n");
-	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash\n");
+	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash {0-%d}[[rule] [alphabet] [min_length] [max_length]]\n", MAX_RULES_COUNT);
 	printf("1 - Brute-force attack\n");
 	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length\n\n");
 	printf("2 - Brute-force attack GPU\n");
@@ -312,6 +375,8 @@ void badUsage()
 	printf("4 - lower+upper case + numbers\n");
 	printf("5 - all characters\n");
 }
+
+
 
 uint32_t * stringToHashNew(char * hashString)
 {
@@ -334,11 +399,16 @@ uint32_t * stringToHashNew(char * hashString)
 	return hashNew;
 }
 
+
+
 #pragma endregion CPU
 
 int main(int argc, char *argv[])
 {
- 
+ // args 1 0 52c69e3a57331081823331c4e69d3f2e 6 6 (999999)
+ // 0 E:\\slovnik.txt 1b34d880de0281139ed8d526b9462e9d 1 1 1 3
+
+
 	uint32_t *hash;
 	char *originalString;
 	int mode = -1;
@@ -355,7 +425,47 @@ int main(int argc, char *argv[])
 	hash = stringToHashNew(argv[3]);
 
 	if (mode == 0) {
-		//originalString = dictionaryAttack(argv[2], hash);
+		//	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash {0-%d}[[rule] [alphabet] [min_length] [max_length]]\n", MAX_RULES_COUNT);
+		char * alphabet[MAX_RULES_COUNT];
+		int alphabetSize[MAX_RULES_COUNT];
+		int minLength[MAX_RULES_COUNT];
+		int maxLength[MAX_RULES_COUNT]; 
+		int rules[MAX_RULES_COUNT];
+		int rulesCount = 0; 
+		if (argc > 4)
+		{
+			if (argc % 4 == 0)
+			{
+				
+				for (int i = 4; i < argc; i += 4)
+				{
+					if (rulesCount + 1 == MAX_RULES_COUNT)
+					{
+						printf("Too many rules\n");
+						break; 
+					}
+					rules[rulesCount] = atoi(argv[i]);
+					alphabetMode = atoi(argv[i + 1]);
+					if (alphabetMode >= 0 && alphabetMode <= 5) {
+						alphabet[rulesCount] = alph[alphabetMode];
+						alphabetSize[rulesCount] = sizes[alphabetMode];
+					}
+
+					else
+					{
+						printf("Incorrectly defined dictionary rules - ignore all\n");
+						rulesCount = 0; 
+						break; 
+					}
+					minLength[rulesCount] = atoi(argv[i + 2]);
+					maxLength[rulesCount] = atoi(argv[i + 3]); 
+					rulesCount++; 
+				}
+			}
+			else
+				printf("Incorrectly defined dictionary rules - ignore all\n");
+		}
+		originalString = dictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
 		if (originalString == NULL) {
 			printf("No matches!\n");
 			return 0;
@@ -390,8 +500,8 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 
-		originalString = cudaBruteForceStart(minLenght, maxLength, _alphabet, alphabetLen, hash);
-		//originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		//originalString = cudaBruteForceStart(minLenght, maxLength, _alphabet, alphabetLen, hash);
+		originalString = bruteForceNew(minLenght, maxLength, _alphabet, alphabetLen, hash);
 		if (originalString == NULL) {
 			printf("No matches!\n");
 			return 0;
