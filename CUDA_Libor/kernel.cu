@@ -1,13 +1,4 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define THREADS 128 /// 128
-#define BLOCKS 32 /// 32
-
-#define THRESHOLD 1000
-
-#define MAX_RULES_COUNT 5
-
-#define ADD_BACK 1
-
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -19,6 +10,20 @@
 #include <ctype.h>
 #include <math.h>
 
+#define THREADS 128 /// 128
+#define BLOCKS 32 /// 32
+
+#define THRESHOLD 1000
+
+#define MAX_RULES_COUNT 5
+
+#define MAX_WORD_LENGTH 150
+#define GRANULARITY 10000
+#define MEMORY_RATIO 10
+
+#define ADD_BACK 1
+
+#define MEMORY 4000000000
 
 char tnumbers[11] = "0123456789";
 char tlowercase[27] = "abcdefghijklmnopqrstuvwxyz";
@@ -35,6 +40,11 @@ char * valuePlaceholder;
 __constant__ char alphabetGPU[95]; 
 __constant__ uint32_t hashGPU[4]; 
 
+__constant__ char dictionaryAlphabetGPU[MAX_RULES_COUNT][95];
+__constant__ int dictionarySize[MAX_RULES_COUNT];
+__constant__ int minLength[MAX_RULES_COUNT];
+__constant__ int maxLength[MAX_RULES_COUNT];
+
 
 #pragma region GPU
 __device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * ret)
@@ -50,7 +60,7 @@ __device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * 
 	}
 }
 
-__device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char * text, int * initialPermutation, uint64_t count, char * valuePlaceholder)
+__device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char * alphabet, char * text, int * initialPermutation, uint64_t count, char * valuePlaceholder, char * textStartAddress, int totalStringLength)
 {
 	// pouzit uint32_t
 
@@ -73,17 +83,17 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 	while (!overflow)
 	{
 		
-		md5Device(text, stringLength, hashPlaceHolderNew, msg);
+		md5Device(textStartAddress, totalStringLength, hashPlaceHolderNew, msg);
 		isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
 		if (retTmp)
 		{
-			memcpy(valuePlaceholder, text, stringLength * sizeof(char)); 
+			memcpy(valuePlaceholder, textStartAddress, totalStringLength * sizeof(char));
 			//free(hashedString);
 			return; 
 		}
 		initialPermutation[0]++;
 		initialPermutation[0] %= alphabetSize;
-		text[0] = alphabetGPU[initialPermutation[0]];
+		text[0] = alphabet[initialPermutation[0]];
 		if (initialPermutation[0] == 0)
 		{
 			for (int i = 1; i < stringLength; i++)
@@ -91,7 +101,7 @@ __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char 
 				// carry chain
 				initialPermutation[i]++;
 				initialPermutation[i] %= alphabetSize;
-				text[i] = alphabetGPU[initialPermutation[i]];
+				text[i] = alphabet[initialPermutation[i]];
 				if (initialPermutation[i] != 0)
 					break;
 				else
@@ -135,9 +145,6 @@ __global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char
 		return;
 	}
 
-	//char * value = bruteForceStepRec(0, i, alphabet, alphabetSize, text, hash);
-
-
 	initialPermutation = (int*)malloc(len * sizeof(int));
 	if (initialPermutation == NULL) {
 		printf("bruteForceDevice, nelze alokovat pamet\n");
@@ -151,8 +158,7 @@ __global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char
 		initialPermutation[i] = start % alphabetSize;
 		start /= alphabetSize; 
 	}
-
-	bruteForceStepDevice(len, alphabetSize, text, initialPermutation, threadWork, valuePlaceholder);
+	bruteForceStepDevice(len, alphabetSize, alphabetGPU, text, initialPermutation, threadWork, valuePlaceholder, text, len);
 
 	free(text);
 	free(initialPermutation);
@@ -211,6 +217,225 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 	}
 	return originalValue; 
 }
+
+// memlimits in bytes!!!
+__host__ char * prepareWords(FILE * fp, size_t memLimit, unsigned int * count, int * maxLen, bool * eof)
+{
+	long start = ftell(fp); 
+	register int _maxLen = 0;
+	register unsigned int _count = 0;
+	char bigbuffer[5000];
+	char word[MAX_WORD_LENGTH];
+	bool _eof = false; 
+	int index = 0; 
+	while (true)
+	{
+		for (int i = 0; i < GRANULARITY; i++)
+		{
+			if (fscanf(fp, "%s", bigbuffer) == EOF)
+			{
+				_eof = true;
+				break; 
+			}
+			int tmp = strlen(bigbuffer);
+			if (tmp > MAX_WORD_LENGTH)
+				continue; 
+			_maxLen = max(tmp, _maxLen); 
+			_count++; 
+			index++; 
+		}
+		_maxLen += 2;
+		size_t tmp = _maxLen * _count * sizeof(char); 
+		if (tmp > memLimit)
+		{
+			_count -= index;
+			break; 
+		}
+		if (_count > UINT_MAX - 2 * GRANULARITY)
+			break; 
+		if (_eof)
+			break; 
+		index = 0; 
+	}
+
+	*eof = _eof; 
+	fseek(fp, start, SEEK_SET); 
+	char * words = (char*)malloc(_count * _maxLen * sizeof(char));
+	for (unsigned int i = 0; i < _count; i++)
+	{ 
+		fscanf(fp, "%s", words + i*_maxLen);
+		words[(i + 1)*_maxLen - 1] = (char)strlen(words + i*_maxLen);
+	}
+
+	*count = _count;
+	*maxLen = _maxLen;
+	return words; 
+
+
+	
+}
+
+__global__ void DictionaryAttackStep(unsigned int count, char * words, char * valuePlaceholder, int maxLen)
+{
+	int threadCount = blockDim.x;
+	int blockCount = gridDim.x;
+	char word[MAX_WORD_LENGTH + 2]; 
+	uint8_t msg[300];
+	uint32_t hashPlaceHolderNew[4];
+	bool retTmp = false; 
+
+	cudaError_t cudaStatus;
+	uint32_t hashLocal[4];
+	memcpy(hashLocal, hashGPU, 4 * sizeof(uint32_t));
+
+	double tmp = ((double)count / blockCount);
+	int blockWork = (int)ceil(tmp);
+	tmp = (double)count / (blockCount*threadCount);
+	int threadWork = (int)ceil(tmp);
+
+	int start = blockIdx.x * blockWork + threadIdx.x * threadWork;
+	int end = start + threadWork;
+	char * address = words + start*maxLen;
+	char * endAddress = words + end*maxLen; 
+	char * realEndAddress = words + count * maxLen; 
+
+	endAddress > realEndAddress ? endAddress = realEndAddress : endAddress = endAddress; 
+	
+	for (; address < endAddress; address += maxLen)
+	{
+		memcpy(word, address, maxLen);
+		size_t len = (size_t)((unsigned char)word[maxLen - 1]);
+		//printf("zkousim %s\n", word);
+		//md5Device(word, len, hashPlaceHolderNew, msg);
+		//isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
+		if (retTmp)
+		{
+			printf("Nalezeno");
+			memcpy(valuePlaceholder, words, len + 1);
+			//free(hashedString);
+			return;
+		}
+	}
+
+}
+
+__host__ void freeWordsMemory(char ** words, unsigned int count)
+{
+	for (unsigned int i = 0; i < count; i++)
+	{
+		free(words[i]);
+	}
+	free(words); 
+}
+__host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabet, int * alphabetSize, int * minLength, int * maxLength, int * rules, int rulesCount)
+{
+
+	// GPU MEMORY:
+	char * usedMemory, *tmpMemory;
+	char * originalValue = NULL;
+	cudaError_t cudaStatus;
+	FILE * fp = fopen(dictionaryFile, "r");
+	bool retTmp = false;
+	char word[MAX_WORD_LENGTH]; 
+	bool eof = false; ;
+	int maxLen = -1, lastLen;
+	unsigned int count = 0, last_count; 
+	size_t * freeMemory,*totalMemory; 
+	size_t memLimit = 0;
+	if (fp == NULL)
+	{
+		printf("Cant open the dictionary");
+		return NULL;
+	}
+	// NAKOPIROVAT PRAVIDLA!
+	
+	memLimit = MEMORY / MEMORY_RATIO;
+
+	char * words = prepareWords(fp, memLimit, &count, &maxLen, &eof);
+
+	cudaStatus = cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaBruteForceStart, nelze alokovat symbol hash\n");
+		return originalValue;
+	}
+	cudaStatus = cudaMalloc(&usedMemory, maxLen * count * sizeof(char));
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaDictionaryAttack, nelze alokovat pamet (prvni dimenze)\n");
+		return originalValue;
+	}
+	cudaStatus = cudaMemcpy(usedMemory,words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaDictionaryAttack, nelze kopirovat pamet (druha dimenze)\n");
+		return originalValue;
+	}
+
+	free(words); 
+	cudaStatus = cudaMalloc((void**)&valuePlaceholder, (size_t)(maxLen * sizeof(char)));
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaBruteForceStart, nelze alokovat pamet\n");
+		return originalValue;
+	}
+	originalValue = (char *)malloc(maxLen * sizeof(char));
+	do 
+	{
+		last_count = count; 
+		lastLen = maxLen; 
+		if (count == 0)
+			break; 
+
+		DictionaryAttackStep << < BLOCKS, THREADS >> > (count, usedMemory, valuePlaceholder, maxLen); 
+		// run kernel
+		words = prepareWords(fp, memLimit, &count, &maxLen, &eof);
+		if (count == 0 && !eof)
+		{
+			printf("Too little VRAM! Exiting now\n");
+			return NULL; 
+		}
+		if (count == 0 && eof)
+			break; 
+		cudaStatus = cudaMalloc(&tmpMemory, maxLen * count * sizeof(char));
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaDictionaryAttack, nelze alokovat pamet (prvni dimenze)\n");
+			return originalValue;
+		}
+		cudaStatus = cudaMemcpy(tmpMemory, words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaDictionaryAttack, nelze kopirovat pamet (druha dimenze)\n");
+			return originalValue;
+		}
+		free(words); 
+		cudaDeviceSynchronize();
+		cudaStatus = cudaFree(usedMemory);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaDictionaryAttack, nelze uvolnit pamet\n");
+			return NULL;
+		}
+		usedMemory = tmpMemory; 
+
+		cudaStatus = cudaMemcpy(originalValue, valuePlaceholder, lastLen, cudaMemcpyDeviceToHost);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaBruteForceStart, nelze zkopirovat pamet\n");
+			free(originalValue);
+			originalValue = NULL;
+			return originalValue;
+		}
+
+		if (originalValue[0] != 0)
+			break; 
+
+
+
+	} while (!eof); 
+	
+	fclose(fp); 
+	if (originalValue[0] == 0)
+		return NULL;
+	else
+		return originalValue; 
+	
+
+}
+
 #pragma endregion GPU
 
 #pragma region CPU
@@ -313,7 +538,7 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 		printf("Cant open the dictionary");
 		return NULL;
 	}
-	char * word = (char*)malloc(255);
+	char * word = (char*)malloc(MAX_WORD_LENGTH);
 	while (true)
 	{
 		if (fscanf(fp, "%s", word) == EOF)
@@ -465,7 +690,8 @@ int main(int argc, char *argv[])
 			else
 				printf("Incorrectly defined dictionary rules - ignore all\n");
 		}
-		originalString = dictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
+		//originalString = dictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
+		originalString = cudaDictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
 		if (originalString == NULL) {
 			printf("No matches!\n");
 			return 0;
@@ -549,7 +775,6 @@ int main(int argc, char *argv[])
 			return 0;
 		}
 	}
-
 	return 0;
 }
 
