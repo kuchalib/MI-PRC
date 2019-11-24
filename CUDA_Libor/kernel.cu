@@ -10,6 +10,18 @@
 #include <ctype.h>
 #include <math.h>
 
+
+static void HandleError(cudaError_t err,
+	const char *file,
+	int line) {
+	if (err != cudaSuccess) {
+		printf("%s in %s at line %d\n", cudaGetErrorString(err),
+			file, line);
+		exit(EXIT_FAILURE);
+	}
+}
+#define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
+
 #define THREADS 128 /// 128
 #define BLOCKS 32 /// 32
 
@@ -17,9 +29,9 @@
 
 #define MAX_RULES_COUNT 5
 
-#define MAX_WORD_LENGTH 150
-#define GRANULARITY 10000
-#define MEMORY_RATIO 10
+#define MAX_WORD_LENGTH 200
+#define GRANULARITY 50000
+#define MEMORY_RATIO 100
 
 #define ADD_BACK 1
 
@@ -60,6 +72,7 @@ __device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * 
 	}
 }
 
+#pragma region Brute force
 __device__ void * bruteForceStepDevice(int stringLength, int alphabetSize, char * alphabet, char * text, int * initialPermutation, uint64_t count, char * valuePlaceholder, char * textStartAddress, int totalStringLength)
 {
 	// pouzit uint32_t
@@ -167,56 +180,36 @@ __global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char
 __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabet, int alphabetSize, uint32_t hash[4])
 {
 	cudaError_t cudaStatus;
-	cudaStatus = cudaMemcpyToSymbol((const void *)alphabetGPU, alphabet, alphabetSize, 0, cudaMemcpyHostToDevice);
-
 	char * originalValue = NULL;
-
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaBruteForceStart, nelze alokovat symbol alphabetGPU\n");
-		return originalValue;
-	}
-
-	cudaStatus = cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaBruteForceStart, nelze alokovat symbol hash\n");
-		return originalValue;
-	}
+	HANDLE_ERROR(cudaMemcpyToSymbol((const void *)alphabetGPU, alphabet, alphabetSize, 0, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice));
 
 	for (int i = minLength; i <= maxLength; i++)
 	{
 		originalValue = NULL; 
-		cudaStatus = cudaMalloc((void**)&valuePlaceholder, (size_t)(i * sizeof(char) + 1));
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaBruteForceStart, nelze alokovat pamet\n");
-			return originalValue;
-		}
+		HANDLE_ERROR(cudaMalloc((void**)&valuePlaceholder, (size_t)(i * sizeof(char) + 1)));
 
-		cudaStatus = cudaMemset(valuePlaceholder, 0, (size_t)i + 1); 
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaBruteForceStart, nelze nastavit pamet\n");
-			return originalValue;
-		}
+		HANDLE_ERROR(cudaMemset(valuePlaceholder, 0, (size_t)i + 1));
 		uint64_t total = pow(alphabetSize, i);
 		bruteForceDevice << <BLOCKS, THREADS >> >(i, total, alphabetSize, valuePlaceholder);
 		originalValue = (char *)malloc(i * sizeof(char) + 1);
 		cudaDeviceSynchronize();
 
-		cudaStatus = cudaMemcpy(originalValue, valuePlaceholder, i, cudaMemcpyDeviceToHost);
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaBruteForceStart, nelze zkopirovat pamet\n");
-			free(originalValue);
-			originalValue = NULL; 
-			return originalValue;
-		}
-		cudaFree(valuePlaceholder);
+		HANDLE_ERROR(cudaMemcpy(originalValue, valuePlaceholder, i, cudaMemcpyDeviceToHost));
+		HANDLE_ERROR(cudaFree(valuePlaceholder));
 
 		if (originalValue[0] != 0)
+		{
+			originalValue[i] = 0; 
 			break;
+		}
 
 		free(originalValue);
 	}
 	return originalValue; 
 }
+
+#pragma endregion Brute force
 
 // memlimits in bytes!!!
 __host__ char * prepareWords(FILE * fp, size_t memLimit, unsigned int * count, int * maxLen, bool * eof)
@@ -279,9 +272,10 @@ __global__ void DictionaryAttackStep(unsigned int count, char * words, char * va
 {
 	int threadCount = blockDim.x;
 	int blockCount = gridDim.x;
-	char word[MAX_WORD_LENGTH + 2]; 
+	char word[MAX_WORD_LENGTH + 10]; 
 	uint8_t msg[300];
 	uint32_t hashPlaceHolderNew[4];
+
 	bool retTmp = false; 
 
 	cudaError_t cudaStatus;
@@ -303,15 +297,15 @@ __global__ void DictionaryAttackStep(unsigned int count, char * words, char * va
 	
 	for (; address < endAddress; address += maxLen)
 	{
-		memcpy(word, address, maxLen);
+		void * destination = memcpy(word, address, maxLen);
 		size_t len = (size_t)((unsigned char)word[maxLen - 1]);
-		//printf("zkousim %s\n", word);
-		//md5Device(word, len, hashPlaceHolderNew, msg);
-		//isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
+		printf("zkousim %s\n", word);
+		md5Device(word, len, hashPlaceHolderNew, msg);
+		isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
 		if (retTmp)
 		{
 			printf("Nalezeno");
-			memcpy(valuePlaceholder, words, len + 1);
+			memcpy(valuePlaceholder, word, len + 1);
 			//free(hashedString);
 			return;
 		}
@@ -353,33 +347,18 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 
 	char * words = prepareWords(fp, memLimit, &count, &maxLen, &eof);
 
-	cudaStatus = cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaBruteForceStart, nelze alokovat symbol hash\n");
-		return originalValue;
-	}
-	cudaStatus = cudaMalloc(&usedMemory, maxLen * count * sizeof(char));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaDictionaryAttack, nelze alokovat pamet (prvni dimenze)\n");
-		return originalValue;
-	}
-	cudaStatus = cudaMemcpy(usedMemory,words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaDictionaryAttack, nelze kopirovat pamet (druha dimenze)\n");
-		return originalValue;
-	}
-
+	HANDLE_ERROR(cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMalloc(&usedMemory, maxLen * count * sizeof(char))); 
+	HANDLE_ERROR(cudaMemcpy(usedMemory,words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice));
 	free(words); 
-	cudaStatus = cudaMalloc((void**)&valuePlaceholder, (size_t)(maxLen * sizeof(char)));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaBruteForceStart, nelze alokovat pamet\n");
-		return originalValue;
-	}
-	originalValue = (char *)malloc(maxLen * sizeof(char));
+	
 	do 
 	{
+		
 		last_count = count; 
-		lastLen = maxLen; 
+		lastLen = maxLen;
+		originalValue = (char *)malloc(maxLen * sizeof(char));
+		HANDLE_ERROR(cudaMalloc((void**)&valuePlaceholder, (size_t)(maxLen * sizeof(char))));
 		if (count == 0)
 			break; 
 
@@ -393,38 +372,19 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 		}
 		if (count == 0 && eof)
 			break; 
-		cudaStatus = cudaMalloc(&tmpMemory, maxLen * count * sizeof(char));
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaDictionaryAttack, nelze alokovat pamet (prvni dimenze)\n");
-			return originalValue;
-		}
-		cudaStatus = cudaMemcpy(tmpMemory, words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice);
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaDictionaryAttack, nelze kopirovat pamet (druha dimenze)\n");
-			return originalValue;
-		}
+		HANDLE_ERROR(cudaMalloc(&tmpMemory, maxLen * count * sizeof(char)));
+		HANDLE_ERROR(cudaMemcpy(tmpMemory, words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice));
 		free(words); 
 		cudaDeviceSynchronize();
-		cudaStatus = cudaFree(usedMemory);
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaDictionaryAttack, nelze uvolnit pamet\n");
-			return NULL;
-		}
+		HANDLE_ERROR(cudaFree(usedMemory));
 		usedMemory = tmpMemory; 
 
-		cudaStatus = cudaMemcpy(originalValue, valuePlaceholder, lastLen, cudaMemcpyDeviceToHost);
-		if (cudaStatus != cudaSuccess) {
-			printf("cudaBruteForceStart, nelze zkopirovat pamet\n");
-			free(originalValue);
-			originalValue = NULL;
-			return originalValue;
-		}
+		HANDLE_ERROR(cudaMemcpy(originalValue, valuePlaceholder, lastLen, cudaMemcpyDeviceToHost));
 
 		if (originalValue[0] != 0)
 			break; 
-
-
-
+		free(originalValue); 
+		HANDLE_ERROR(cudaFree(valuePlaceholder));
 	} while (!eof); 
 	
 	fclose(fp); 
@@ -532,24 +492,27 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 	uint32_t hashPlaceholder[4];
 	FILE * fp = fopen(dictionaryFile, "r");
 	bool retTmp = false;
-
+	int maxLen = 0;
 	if (fp == NULL)
 	{
 		printf("Cant open the dictionary");
 		return NULL;
 	}
-	char * word = (char*)malloc(MAX_WORD_LENGTH);
+	char * word = (char*)malloc(255);
 	while (true)
 	{
 		if (fscanf(fp, "%s", word) == EOF)
 			break;
+
 		int len = strlen(word);
+		maxLen = max(maxLen, len); 
 		md5(word, len, hashPlaceholder);
 		isHashEqualNew(hashPlaceholder, hash, &retTmp);
 		if (retTmp)
 		{
 			//free(hashedString);
 			fclose(fp);
+			printf("%d\n", maxLen);
 			return word;
 		}
 		
@@ -578,6 +541,7 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 
 	free(word);
 	fclose(fp);
+	printf("%d\n", maxLen);
 	return NULL;
 }
 
@@ -632,7 +596,7 @@ int main(int argc, char *argv[])
 {
  // args 1 0 52c69e3a57331081823331c4e69d3f2e 6 6 (999999)
  // 0 E:\\slovnik.txt 1b34d880de0281139ed8d526b9462e9d 1 1 1 3
-
+// 0 E:\\words.txt 77360f71a0c28c212111a617b90466d8 0 1 1 3
 
 	uint32_t *hash;
 	char *originalString;
