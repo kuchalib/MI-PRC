@@ -30,8 +30,8 @@ static void HandleError(cudaError_t err,
 #define MAX_RULES_COUNT 5
 
 #define MAX_WORD_LENGTH 200
-#define GRANULARITY 50000
-#define MEMORY_RATIO 100
+#define GRANULARITY 100000
+#define MEMORY_RATIO 2
 
 #define ADD_BACK 1
 
@@ -215,6 +215,7 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 __host__ char * prepareWords(FILE * fp, size_t memLimit, unsigned int * count, int * maxLen, bool * eof)
 {
 	long start = ftell(fp); 
+
 	register int _maxLen = 0;
 	register unsigned int _count = 0;
 	char bigbuffer[5000];
@@ -253,6 +254,7 @@ __host__ char * prepareWords(FILE * fp, size_t memLimit, unsigned int * count, i
 
 	*eof = _eof; 
 	fseek(fp, start, SEEK_SET); 
+	long tmp = ftell(fp); 
 	char * words = (char*)malloc(_count * _maxLen * sizeof(char));
 	for (unsigned int i = 0; i < _count; i++)
 	{ 
@@ -299,12 +301,10 @@ __global__ void DictionaryAttackStep(unsigned int count, char * words, char * va
 	{
 		void * destination = memcpy(word, address, maxLen);
 		size_t len = (size_t)((unsigned char)word[maxLen - 1]);
-		printf("zkousim %s\n", word);
 		md5Device(word, len, hashPlaceHolderNew, msg);
 		isHashEqualNewDevice(hashPlaceHolderNew, hashLocal, &retTmp);
 		if (retTmp)
 		{
-			printf("Nalezeno");
 			memcpy(valuePlaceholder, word, len + 1);
 			//free(hashedString);
 			return;
@@ -336,6 +336,10 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 	unsigned int count = 0, last_count; 
 	size_t * freeMemory,*totalMemory; 
 	size_t memLimit = 0;
+	bool __eof = false; 
+	
+	
+	uint64_t nacteno = 0; 
 	if (fp == NULL)
 	{
 		printf("Cant open the dictionary");
@@ -345,8 +349,8 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 	
 	memLimit = MEMORY / MEMORY_RATIO;
 
-	char * words = prepareWords(fp, memLimit, &count, &maxLen, &eof);
-
+	char * words = prepareWords(fp, memLimit, &count, &maxLen, &__eof);
+	nacteno += count; 
 	HANDLE_ERROR(cudaMemcpyToSymbol((const void *)hashGPU, hash, sizeof(uint32_t) * 4, 0, cudaMemcpyHostToDevice));
 	HANDLE_ERROR(cudaMalloc(&usedMemory, maxLen * count * sizeof(char))); 
 	HANDLE_ERROR(cudaMemcpy(usedMemory,words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice));
@@ -354,7 +358,7 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 	
 	do 
 	{
-		
+		eof = __eof; 
 		last_count = count; 
 		lastLen = maxLen;
 		originalValue = (char *)malloc(maxLen * sizeof(char));
@@ -364,17 +368,19 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 
 		DictionaryAttackStep << < BLOCKS, THREADS >> > (count, usedMemory, valuePlaceholder, maxLen); 
 		// run kernel
-		words = prepareWords(fp, memLimit, &count, &maxLen, &eof);
+		words = prepareWords(fp, memLimit, &count, &maxLen, &__eof);
+		nacteno += count;
 		if (count == 0 && !eof)
 		{
 			printf("Too little VRAM! Exiting now\n");
 			return NULL; 
 		}
-		if (count == 0 && eof)
-			break; 
-		HANDLE_ERROR(cudaMalloc(&tmpMemory, maxLen * count * sizeof(char)));
-		HANDLE_ERROR(cudaMemcpy(tmpMemory, words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice));
-		free(words); 
+		if (count > 0)
+		{
+			HANDLE_ERROR(cudaMalloc(&tmpMemory, maxLen * count * sizeof(char)));
+			HANDLE_ERROR(cudaMemcpy(tmpMemory, words, maxLen * count * sizeof(char), cudaMemcpyHostToDevice));
+			free(words);
+		}
 		cudaDeviceSynchronize();
 		HANDLE_ERROR(cudaFree(usedMemory));
 		usedMemory = tmpMemory; 
@@ -501,9 +507,9 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 	char * word = (char*)malloc(255);
 	while (true)
 	{
+		
 		if (fscanf(fp, "%s", word) == EOF)
 			break;
-
 		int len = strlen(word);
 		maxLen = max(maxLen, len); 
 		md5(word, len, hashPlaceholder);
@@ -512,7 +518,6 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 		{
 			//free(hashedString);
 			fclose(fp);
-			printf("%d\n", maxLen);
 			return word;
 		}
 		
@@ -541,7 +546,6 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 
 	free(word);
 	fclose(fp);
-	printf("%d\n", maxLen);
 	return NULL;
 }
 
@@ -595,7 +599,7 @@ uint32_t * stringToHashNew(char * hashString)
 int main(int argc, char *argv[])
 {
  // args 1 0 52c69e3a57331081823331c4e69d3f2e 6 6 (999999)
- // 0 E:\\slovnik.txt 1b34d880de0281139ed8d526b9462e9d 1 1 1 3
+ // 0 E:\\Dictionary\slovnik.txt 1b34d880de0281139ed8d526b9462e9d 1 1 1 3
 // 0 E:\\words.txt 77360f71a0c28c212111a617b90466d8 0 1 1 3
 
 	uint32_t *hash;
