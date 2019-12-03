@@ -60,6 +60,9 @@ __constant__ int minLengthGPU[MAX_RULES_COUNT];
 __constant__ int maxLengthGPU[MAX_RULES_COUNT];
 __constant__ int rulesGPU[MAX_RULES_COUNT];
 
+int threads = THREADS;
+int blocks = BLOCKS; 
+
 
 #pragma region GPU
 __device__ void isHashEqualNewDevice(uint32_t * hash1, uint32_t * hash2, bool * ret)
@@ -147,9 +150,9 @@ __global__ void bruteForceDevice(int len, uint64_t total, int alphabetSize, char
 	int threadCount = blockDim.x;
 	int blockCount = gridDim.x;
 	double tmp = ((double)total / blockCount);
-	uint64_t blockWork = (int)ceil(tmp);
+	uint64_t blockWork = (uint64_t)ceil(tmp);
 	tmp = (double)total / (blockCount*threadCount);
-	uint64_t threadWork = (int)ceil(tmp);
+	uint64_t threadWork = (uint64_t)ceil(tmp);
 	uint64_t start = blockIdx.x * blockWork + threadIdx.x * threadWork;
 	
 
@@ -194,7 +197,7 @@ __host__ char * cudaBruteForceStart(int minLength, int maxLength, char * alphabe
 
 		HANDLE_ERROR(cudaMemset(valuePlaceholder, 0, (size_t)i + 1));
 		uint64_t total = pow(alphabetSize, i);
-		bruteForceDevice << <BLOCKS, THREADS >> >(i, total, alphabetSize, valuePlaceholder);
+		bruteForceDevice << <blocks, threads >> >(i, total, alphabetSize, valuePlaceholder);
 		originalValue = (char *)malloc(i * sizeof(char) + 1);
 		cudaDeviceSynchronize();
 
@@ -785,6 +788,8 @@ int main(int argc, char *argv[])
 		alphabetMode = atoi(argv[2]);
 		minLenght = atoi(argv[4]);
 		maxLength = atoi(argv[5]);
+		blocks = atoi(argv[6]);
+		threads = atoi(argv[7]); 
 
 		if (minLenght > maxLength) {
 			printf("Minimum length must be less than or equal to the maximum length.\n");
