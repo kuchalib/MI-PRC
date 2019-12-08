@@ -31,13 +31,14 @@ static void HandleError(cudaError_t err,
 #define MAX_RULES_COUNT 5
 
 #define MAX_WORD_LENGTH 200
-#define GRANULARITY 100000
+#define GRANULARITY 5000
 #define MEMORY_RATIO 2
+
 
 
 #define ADD_BACK 1
 
-#define MEMORY 4000000000
+#define DEVICE 0 // toto mozna bude nutne menit na STARU!
 
 char tnumbers[11] = "0123456789";
 char tlowercase[27] = "abcdefghijklmnopqrstuvwxyz";
@@ -292,9 +293,9 @@ __global__ void DictionaryAttackStep(unsigned int count, char * words, char * va
 	memcpy(hashLocal, hashGPU, 4 * sizeof(uint32_t));
 
 	double tmp = ((double)count / blockCount);
-	int blockWork = (int)ceil(tmp);
+	uint64_t blockWork = (uint64_t)ceil(tmp);
 	tmp = (double)count / (blockCount*threadCount);
-	int threadWork = (int)ceil(tmp);
+	uint64_t threadWork = (uint64_t)ceil(tmp);
 
 	int start = blockIdx.x * blockWork + threadIdx.x * threadWork;
 	int end = start + threadWork;
@@ -347,14 +348,6 @@ __global__ void DictionaryAttackStep(unsigned int count, char * words, char * va
 
 }
 
-__host__ void freeWordsMemory(char ** words, unsigned int count)
-{
-	for (unsigned int i = 0; i < count; i++)
-	{
-		free(words[i]);
-	}
-	free(words); 
-}
 __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabet, int * alphabetSize, int * minLength, int * maxLength, int * rules, int rulesCount)
 {
 
@@ -406,8 +399,9 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 		free(_maxLength);
 		free(_alphabet); 
 	}
-	
-	memLimit = MEMORY / MEMORY_RATIO;
+	cudaDeviceProp prop; 
+	HANDLE_ERROR(cudaGetDeviceProperties(&prop, DEVICE)); 
+	memLimit = prop.totalGlobalMem / MEMORY_RATIO;
 
 	char * words = prepareWords(fp, memLimit, &count, &maxLen, &__eof);
 	nacteno += count; 
@@ -423,10 +417,11 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 		lastLen = maxLen;
 		originalValue = (char *)malloc(maxLen * sizeof(char));
 		HANDLE_ERROR(cudaMalloc((void**)&valuePlaceholder, (size_t)(maxLen * sizeof(char))));
+		HANDLE_ERROR(cudaMemset(valuePlaceholder, 0, (size_t)maxLen * sizeof(char)));
 		if (count == 0)
 			break; 
 
-		DictionaryAttackStep << < BLOCKS, THREADS >> > (count, usedMemory, valuePlaceholder, maxLen, rulesCount); 
+		DictionaryAttackStep << < blocks, threads >> > (count, usedMemory, valuePlaceholder, maxLen, rulesCount); 
 		// run kernel
 		words = prepareWords(fp, memLimit, &count, &maxLen, &__eof);
 		nacteno += count;
@@ -449,7 +444,7 @@ __host__ char * cudaDictionaryAttack(char * dictionaryFile, uint32_t hash[4], ch
 
 		if (originalValue[0] != 0)
 			break; 
-		free(originalValue); 
+		//free(originalValue); 
 		HANDLE_ERROR(cudaFree(valuePlaceholder));
 	} while (!eof); 
 	
@@ -598,7 +593,7 @@ char * dictionaryAttack(char * dictionaryFile, uint32_t hash[4], char ** alphabe
 						fclose(fp);
 						return word;
 					}
-
+					// free(initialPermutation); 
 				}
 			}
 		}
@@ -619,9 +614,9 @@ void badUsage()
 	printf("1 - Brute-force attack\n");
 	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length\n");
 	printf("2 - Brute-force attack GPU\n");
-	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length [GPU_OPTINS]\n");
+	printf("    Usage: PATH_TO_PROGRAM 1 alphabet hash min_length max_length blocks threads\n");
 	printf("3 - Dictionary attack - GPU\n");
-	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash {0-%d}[[rule] [alphabet] [min_length] [max_length]] [GPU_OPTINS]\n", MAX_RULES_COUNT);
+	printf("    Usage: PATH_TO_PROGRAM 0 path_to_dictionary hash {0-%d}[[rule] [alphabet] [min_length] [max_length]] blocks threads\n", MAX_RULES_COUNT);
 	printf("ALPHABET:\n");
 	printf("0 - numbers only\n");
 	printf("1 - lower case\n");
@@ -629,12 +624,6 @@ void badUsage()
 	printf("3 - lower+upper case\n");
 	printf("4 - lower+upper case + numbers\n");
 	printf("5 - all characters\n");
-	printf("GPU OPTIONS (todo):\n");
-	printf("-a GPU adapter (0-N)\n"); 
-	printf("-t GPU threads - number of threads for kernel\n");
-	printf("-b GPU blocks - number of blocks for kernel\n");
-	printf("-m Memory limit\n");
-	printf("etc..\n"); 
 
 }
 
@@ -670,6 +659,7 @@ int main(int argc, char *argv[])
  // args 1 0 52c69e3a57331081823331c4e69d3f2e 6 6 (999999)
  // 0 E:\\Dictionary\slovnik.txt 1b34d880de0281139ed8d526b9462e9d 1 1 1 3
 // 0 E:\\words.txt 77360f71a0c28c212111a617b90466d8 0 1 1 3
+// 3 E:\\Dictionary\slovnik.txt b8074d446492705a6dd7d5e75aaf954f 1 0 1 1 32 128
 
 	uint32_t *hash;
 	char *originalString;
@@ -696,10 +686,13 @@ int main(int argc, char *argv[])
 		int rulesCount = 0; 
 		if (argc > 4)
 		{
-			if (argc % 4 == 0)
+			int argcTmp = argc; 
+			if (mode == 3)
+				argcTmp -= 2; 
+			if (argcTmp % 4 == 0)
 			{
 				
-				for (int i = 4; i < argc; i += 4)
+				for (int i = 4; i < argcTmp; i += 4)
 				{
 					if (rulesCount + 1 == MAX_RULES_COUNT)
 					{
@@ -730,8 +723,22 @@ int main(int argc, char *argv[])
 		if(mode == 0)
 			originalString = dictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
 		else if (mode == 3)
+		{
+			if (argc < rulesCount * 4 + 6)
+			{
+				badUsage();
+				return -1; 
+			}
+			blocks = atoi(argv[rulesCount * 4 + 4]);
+			threads = atoi(argv[rulesCount * 4 + 5]);
 			originalString = cudaDictionaryAttack(argv[2], hash, alphabet, alphabetSize, minLength, maxLength, rules, rulesCount);
+		}
 		if (originalString == NULL) {
+			printf("No matches!\n");
+			return 0;
+		}
+		else if (originalString[0] == '0')
+		{
 			printf("No matches!\n");
 			return 0;
 		}
@@ -779,7 +786,7 @@ int main(int argc, char *argv[])
 	}
 	else if (mode == 2)
 	{
-		if (argc < 6) {
+		if (argc < 8) {
 			badUsage();
 			return -1;
 		}
