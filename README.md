@@ -4,27 +4,21 @@
 
 ### Slovníkový útok
 
-CPU:
+**CPU**
 
 Použití: **Cesta\_k\_programu 0 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]]
 
-GPU:
+**GPU**
 
 Použití: **Cesta\_k\_programu 3 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]] **počet\_bloků počet\_vláken**
 
-Kde abeceda může nabývat hodnot (0-5):
-
-0 – pouze číslice (max 19 znaků)
-
-1 – malá písmena (max 13 znaků)
-
-2 – velká písmena (max 13 znaků)
-
-3 – malá a velká písmena (max 11 znaků)
-
-4 – malá a velká písmena, číslice (max 10 znaků)
-
-5 – všechny znaky (písmena, číslice, speciální znaky) (max 9 znaků)
+Kde **abeceda** může nabývat hodnot (0-5):
+- 0 – pouze číslice (max 19 znaků)
+- 1 – malá písmena (max 13 znaků)
+- 2 – velká písmena (max 13 znaků)
+- 3 – malá a velká písmena (max 11 znaků)
+- 4 – malá a velká písmena, číslice (max 10 znaků)
+- 5 – všechny znaky (písmena, číslice, speciální znaky) (max 9 znaků)
 
 Pravidla mohou nabývat hodnotu 1:
 
