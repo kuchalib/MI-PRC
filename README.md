@@ -6,11 +6,14 @@
 
 **CPU**
 
-Použití: **Cesta\_k\_programu 0 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]]
+Použití: **cesta\_k\_programu 0 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]]
 
 **GPU**
 
-Použití: **Cesta\_k\_programu 3 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]] **počet\_bloků počet\_vláken**
+Použití: **cesta\_k\_programu 3 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [abeceda] [minimální délka] [maximální délka]] **počet\_bloků počet\_vláken**
+
+Příklad: ./a.out 3 words.txt bd14a2ab2d51782968669b68b17d909f 1 3 2 2 16 96
+
 
 Pravidla mohou nabývat hodnotu 1:
 
@@ -20,12 +23,15 @@ Pravidla mohou nabývat hodnotu 1:
 
 **CPU**
 
-Použití:
-  **cesta\_k\_programu 1 abeceda hash minimální\_délka maximální\_délka**
+Použití: **cesta\_k\_programu 1 abeceda hash minimální\_délka maximální\_délka**
+
+Příklad:
 
 **GPU**
 
 Použití: **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_délka počet\_bloků počet\_vláken**
+
+Příklad:
 
 ---
 **abeceda** může nabývat hodnot (0-5):
@@ -35,6 +41,10 @@ Použití: **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_
 - 3 – malá a velká písmena (max 11 znaků)
 - 4 – malá a velká písmena, číslice (max 10 znaků)
 - 5 – všechny znaky (písmena, číslice, speciální znaky) (max 9 znaků)
+
+**minimimální délka** řetězce
+
+**maximální délka** řetězce
 
 ## Výstup:
 V případě nalezení řetězce odpovídající zadanému hashi se vypíše daný řetězec, jinak se vypíše „no matches&quot;. Chyby jsou indikované daným výpisem programu.
