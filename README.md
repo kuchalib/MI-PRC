@@ -39,7 +39,7 @@ Použití: **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_
 
 **mximální_délka** řetězce
 
-**pravidlo** může nabývat hodnotu 1:
+**pravidlo** může nabývat hodnoty 1:
 - 1 – přidávání řetězců dané abecedy délky minimální – maximální délka za slovo ze slovníku
 
 ## Výstup
