@@ -15,7 +15,7 @@ for n in 0 1 2 3 4; do
         for b in 16 32 48 64 80 96 112 128 144 160
         do
             START=$(date +%s.%N)
-            echo -n "$(./a.out 2 $alphabets[$n] $hashes[$n] $min[$n] $max[$n] $b $t})" >> $log_file
+            echo -n "$(./a.out 2 ${alphabets[$n]} ${hashes[$n]} ${min[$n]} ${max[$n]} $b $t})" >> $log_file
             END=$(date +%s.%N)
             DIFF=$(echo "$END - $START" | bc)
             echo ";${b};${t};${DIFF}" >> $log_file
