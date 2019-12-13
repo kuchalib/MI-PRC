@@ -42,5 +42,5 @@ Použití: **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_
 **pravidlo** může nabývat hodnotu 1:
 - 1 – přidávání řetězců dané abecedy délky minimální – maximální délka za slovo ze slovníku
 
-## Výstup:
+## Výstup
 V případě nalezení řetězce odpovídající zadanému hashi se vypíše daný řetězec, jinak se vypíše „no matches&quot;. Chyby jsou indikované daným výpisem programu.
