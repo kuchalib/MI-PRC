@@ -49,6 +49,4 @@ Kde abeceda může nabývat hodnot (0-5):
 5 – všechny znaky (písmena, číslice, speciální znaky) (max 9 znaků)
 
 ## Výstup:
-
-V případě nalezení řetězci odpovídající zadanému hashi se vypíše daný řetězec, jinak se vypíše „no matches&quot;, chyby jsou indikované daným výpisem programu|
-
+V případě nalezení řetězce odpovídající zadanému hashi se vypíše daný řetězec, jinak se vypíše „no matches&quot;. Chyby jsou indikované daným výpisem programu.
