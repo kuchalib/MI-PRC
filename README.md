@@ -1,8 +1,8 @@
 # MI-PRC
 
-## Použití programu:
+## Použití programu
 
-**Slovníkový útok:**
+### Slovníkový útok
 
 CPU:
 
