@@ -20,11 +20,12 @@ Pravidla mohou nabývat hodnotu 1:
 
 **CPU**
 
-Použití **cesta\_k\_programu 1 abeceda hash minimální\_délka maximální\_délka**
+Použití:
+  **cesta\_k\_programu 1 abeceda hash minimální\_délka maximální\_délka**
 
 **GPU**
 
-Použití **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_délka počet\_bloků počet\_vláken**
+Použití: **cesta\_k\_programu 2 abeceda hash minimální\_délka maximální\_délka počet\_bloků počet\_vláken**
 
 ---
 **abeceda** může nabývat hodnot (0-5):
