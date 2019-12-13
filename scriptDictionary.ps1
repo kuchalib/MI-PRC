@@ -15,7 +15,6 @@ $maxA = $max
 foreach ($THREAD in $THREADS)
 {
     foreach ($BLOCK in $BLOCKS)
-    #for ($BLOCK  = 16; $BLOCK  -le 160; $BLOCK++)
     {
         $i = Get-Date
         $ret = .\prc_gpu.exe 3 $dictionary $hash 1 0 4 4 $BLOCK $THREAD
