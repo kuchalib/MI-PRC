@@ -14,11 +14,6 @@ Použití: **cesta\_k\_programu 3 cesta\_ke\_slovníku hash** {0-5}[[pravidlo] [
 
 Příklad: ./a.out 3 words.txt bd14a2ab2d51782968669b68b17d909f 1 3 2 2 16 96
 
-
-Pravidla mohou nabývat hodnotu 1:
-
-1 – přidávání řetězců dané abecedy délky minimální – maximální délka za slovo ze slovníku
-
 ### Útok hrubou silou
 
 **CPU**
@@ -44,7 +39,10 @@ Příklad:
 
 **minimimální délka** řetězce
 
-**maximální délka** řetězce
+**mximální délka** řetězce
+
+**pravidlo** může nabývat hodnotu 1:
+- 1 – přidávání řetězců dané abecedy délky minimální – maximální délka za slovo ze slovníku
 
 ## Výstup:
 V případě nalezení řetězce odpovídající zadanému hashi se vypíše daný řetězec, jinak se vypíše „no matches&quot;. Chyby jsou indikované daným výpisem programu.
